@@ -1,4 +1,3 @@
-// server.js (version ES Modules)
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -6,7 +5,8 @@ import {
   wallsData,
   rotateCompassData,
   doubleRotateCompassData,
-  entryTeleportData 
+  entryTeleportData,
+  exits
 } from './config.js';
 
 const app = express();
@@ -19,19 +19,28 @@ const io = new Server(server, {
   }
 });
 
-// --- Définition des cartes ---
 const initialDeck = [
   { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' },
   { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' },
   { type: 'S' }, { type: 'S' }, { type: 'S' }, { type: 'S' }, { type: 'S' }, { type: 'S' },
   { type: 'W' }, { type: 'W' }, { type: 'W' }, { type: 'W' }, { type: 'W' }, { type: 'W' },
   { type: 'special', text: 'Volez une carte à un adversaire', action: 'steal' },
+  { type: 'special', text: 'Volez une carte à un adversaire', action: 'steal' },
+  { type: 'special', text: 'Volez une carte à un adversaire', action: 'steal' },
+  { type: 'special', text: 'Volez une carte à un adversaire', action: 'steal' },
+  { type: 'special', text: 'Volez une carte à un adversaire', action: 'steal' },
   { type: 'special', text: 'Tournez la boussole d\'un quart de tour', action: 'rotateQuarter' },
-  { type: 'special', text: 'Tournez la boussole d\'un tour complet', action: 'rotateFull' }
+  { type: 'special', text: 'Tournez la boussole d\'un quart de tour', action: 'rotateQuarter' },
+  { type: 'special', text: 'Tournez la boussole d\'un quart de tour', action: 'rotateQuarter' },
+  { type: 'special', text: 'Tournez la boussole d\'un quart de tour', action: 'rotateQuarter' },
+  { type: 'special', text: 'Tournez la boussole d\'un quart de tour', action: 'rotateQuarter' },
+  { type: 'special', text: 'Tournez la boussole d\'un tour complet', action: 'rotateFull' },
+  { type: 'special', text: 'Tournez la boussole d\'un tour complet', action: 'rotateFull' },
+  { type: 'special', text: 'Tournez la boussole d\'un tour complet', action: 'rotateFull' },
+  { type: 'special', text: 'Tournez la boussole d\'un tour complet', action: 'rotateFull' },
 ];
 
-// Fonction de mélange
-function shuffle(arr) {
+const shuffle = (arr) => {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -42,17 +51,14 @@ function shuffle(arr) {
 const games = {};
 const gridSize = 20;
 
-// On définit ici isWall avant toute utilisation
-function isWall(row, col) {
+const isWall = (row, col) => {
   if (!wallsData) {
     console.error("wallsData est undefined");
     return false;
   }
   return wallsData.some(w => w.row === row && w.col === col);
 }
-
-// Dans l'état initial, on ajoute également des flags pour la rotation
-function initializeGameState({ playersCount, namesArr, colorsArr }) {
+const initializeGameState = ({ playersCount, namesArr, colorsArr }) => {
   return {
     deck: shuffle([...initialDeck]),
     discardPile: [],
@@ -66,12 +72,17 @@ function initializeGameState({ playersCount, namesArr, colorsArr }) {
     expectedPlayersCount: playersCount,
     lockedWalls: [],
     showDirection: false,
+    showDice: false,
     pendingRotation: 0,
     rotationCount: 0,
+    showDice: false,
+    diceValue: 1,
+    showStealModal: false,
+    stealer: null
   };
 }
 
-function computePositions(playersCount) {
+const computePositions = (playersCount) => {
   if (playersCount === 2) {
     return [ { row: 0, col: 0 }, { row: gridSize - 1, col: gridSize - 1 } ];
   } else if (playersCount === 3) {
@@ -86,7 +97,7 @@ function computePositions(playersCount) {
   }
 }
 
-function computeGoals(playersCount) {
+const computeGoals = (playersCount) => {
   if (playersCount === 2) {
     return [ { row: gridSize - 1, col: gridSize - 1 }, { row: 0, col: 0 } ];
   } else if (playersCount === 3) {
@@ -101,7 +112,7 @@ function computeGoals(playersCount) {
   }
 }
 
-function dealInitialCards(gameState) {
+const dealInitialCards = (gameState) => {
   gameState.playerOrder.forEach((socketId, index) => {
     const startPos = gameState.playersPositions[index];
     gameState.players[socketId].position = { ...startPos };
@@ -110,7 +121,12 @@ function dealInitialCards(gameState) {
   });
 }
 
-function drawOneCard(gameState) {
+const isLockedWall = (row, col, lockedWalls) => {
+  if (!lockedWalls) return false;
+  return lockedWalls.some(wall => wall.row === row && wall.col === col);
+}
+
+const drawOneCard = (gameState) => {
   if (gameState.deck.length === 0) {
     if (gameState.discardPile.length === 0) return null;
     gameState.deck = shuffle(gameState.discardPile);
@@ -119,7 +135,7 @@ function drawOneCard(gameState) {
   return gameState.deck.pop();
 }
 
-function drawCards(gameState) {
+const drawCards = (gameState) => {
   const cards = [];
   for (let i = 0; i < 3; i++) {
     const card = drawOneCard(gameState);
@@ -128,12 +144,9 @@ function drawCards(gameState) {
   return cards;
 }
 
-// Fonction de déplacement qui gère les murs et la rotation
-function movePlayer(gameState, player, playedCardType) {
-  // Ordre de base fixe
+const movePlayer = (gameState, player, playedCardType) => {
   const baseDirections = ['N', 'E', 'S', 'W'];
   const index = baseDirections.indexOf(playedCardType);
-  // Récupérer la direction effective à partir de gameState.cardDirections
   const effectiveDirection = gameState.cardDirections[index];
 
   let rowChange = 0, colChange = 0;
@@ -147,7 +160,6 @@ function movePlayer(gameState, player, playedCardType) {
   const clampedRow = Math.max(0, Math.min(gridSize - 1, newRow));
   const clampedCol = Math.max(0, Math.min(gridSize - 1, newCol));
 
-  // Gestion des murs (identique)
   if (isWall(clampedRow, clampedCol)) {
     const alreadyLocked = gameState.lockedWalls.some(w => w.row === clampedRow && w.col === clampedCol);
     if (!alreadyLocked) {
@@ -161,9 +173,9 @@ function movePlayer(gameState, player, playedCardType) {
     player.position = { row: clampedRow, col: clampedCol };
   }
 
-  // Gestion des cases de rotation (inchangée)
   const rotateIndex = rotateCompassData.findIndex(r => r.row === clampedRow && r.col === clampedCol);
   const doubleIndex = doubleRotateCompassData.findIndex(r => r.row === clampedRow && r.col === clampedCol);
+  const entryIndex = entryTeleportData.findIndex(r => r.row === clampedRow && r.col === clampedCol);
 
   if (doubleIndex !== -1) {
     gameState.pendingRotation = 2;
@@ -173,6 +185,11 @@ function movePlayer(gameState, player, playedCardType) {
     gameState.showDirection = true;
   }
 
+  if(entryIndex !== -1) {
+    console.log('PORTE')
+    gameState.showDice = true;
+  }
+
   if (player.position.row === player.goal.row && player.position.col === player.goal.col) {
     gameState.winner = player.name;
   }
@@ -180,21 +197,70 @@ function movePlayer(gameState, player, playedCardType) {
   return player.position;
 }
 
-function useCardAction(gameState, socketId, payload) {
+function initiateCompassTurn(gameId, socketId) {
+  console.log('games',games)
+  console.log('socketId', socketId)
+  const game = games[gameId];
+  console.log(gameId);
+  console.log(game)
+  console.log(games[gameId])
+  if (!game) return;
+  game.pendingRotation = 1;
+  game.showDirection = true;
+}
+
+function initiateCompassFullTurn(gameId, socketId) {
+  console.log('games',games)
+  console.log('socketId', socketId)
+
+  const game = games[gameId];
+  console.log(gameId);
+  console.log(game)
+  console.log(games[gameId])
+  if (!game) return;
+  game.pendingRotation = 2; 
+  game.showDirection = true;
+}
+
+const useCardAction = (gameState, socketId, payload, gameId) => {
   if (gameState.playerOrder[gameState.playerTurn] !== socketId) return;
   const player = gameState.players[socketId];
   const index = payload.index;
   if (index < 0 || index >= player.hand.length) return;
-  const playedCard = player.hand.splice(index, 1)[0];
-  gameState.discardPile.push(playedCard);
   
-  if (playedCard.type !== 'special') {
-    movePlayer(gameState, player, playedCard.type);
-  }
-  // Vous pouvez ajouter ici la gestion des cartes spéciales si nécessaire
-}
+  const playedCard = player.hand[index];
 
-function endTurnAction(gameState) {
+  if (playedCard.type !== 'special') {
+    if (!canMove(gameState, player, playedCard.type)) {
+      io.to(socketId).emit('moveImpossible', { message: "Déplacement impossible", index: index });
+      return;
+    }
+    player.hand.splice(index, 1);
+    gameState.discardPile.push(playedCard);
+    movePlayer(gameState, player, playedCard.type);
+  } else {
+    if (playedCard.action === 'steal') {
+      gameState.showStealModal = true;
+      gameState.stealer = socketId;
+    } else if (playedCard.action === 'rotateQuarter') {
+      initiateCompassTurn(gameId, socketId);
+    } else if (playedCard.action === 'rotateFull') {
+      initiateCompassFullTurn(gameId, socketId);
+    }
+    player.hand.splice(index, 1);
+    gameState.discardPile.push(playedCard);
+  }
+  
+  io.to(gameId).emit('updateGameState', { 
+    ...gameState, 
+    wallsData, 
+    rotateCompassData, 
+    doubleRotateCompassData, 
+    entryTeleportData 
+  });
+};
+
+const endTurnAction = (gameState) => {
   const currentSocketId = gameState.playerOrder[gameState.playerTurn];
   let currentPlayer = gameState.players[currentSocketId];
   if (!currentPlayer) {
@@ -221,16 +287,42 @@ function endTurnAction(gameState) {
   return gameState;
 }
 
-function processPlayerAction(gameState, socketId, action, payload) {
+const processPlayerAction = (gameState, socketId, action, payload, gameId) => {
   if (action === 'useCard') {
-    useCardAction(gameState, socketId, payload);
+    useCardAction(gameState, socketId, payload, gameId);
   } else if (action === 'endTurn') {
     endTurnAction(gameState);
   }
   return gameState;
 }
+const canMove = (gameState, player, playedCardType) => {
+  const baseDirections = ['N', 'E', 'S', 'W'];
+  const index = baseDirections.indexOf(playedCardType);
+  const effectiveDirection = gameState.cardDirections[index];
 
-// Gestion de l'événement de rotation choisi par le joueur depuis la modale
+  let rowChange = 0, colChange = 0;
+  if (effectiveDirection === 'N') rowChange = -1;
+  else if (effectiveDirection === 'S') rowChange = 1;
+  else if (effectiveDirection === 'E') colChange = 1;
+  else if (effectiveDirection === 'W') colChange = -1;
+
+  const newRow = player.position.row + rowChange;
+  const newCol = player.position.col + colChange;
+
+  if (newRow < 0 || newRow >= gridSize || newCol < 0 || newCol >= gridSize) return false;
+
+  if (isWall(newRow, newCol)) {
+    if (!isLockedWall(newRow, newCol, gameState.lockedWalls)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Sinon, le déplacement est possible
+  return true;
+}
+
+
 io.on('connection', (socket) => {
   console.log(`Connexion : ${socket.id}`);
   
@@ -258,7 +350,8 @@ io.on('connection', (socket) => {
       wallsData, 
       rotateCompassData, 
       doubleRotateCompassData, 
-      entryTeleportData 
+      entryTeleportData,
+      exits
     });
   });
   
@@ -266,7 +359,7 @@ io.on('connection', (socket) => {
     const { gameId, action, payload } = data;
     const game = games[gameId];
     if (!game) return;
-    processPlayerAction(game, socket.id, action, payload);
+    processPlayerAction(game, socket.id, action, payload, gameId);
     io.to(gameId).emit('updateGameState', { 
       ...game, 
       wallsData, 
@@ -287,10 +380,9 @@ io.on('connection', (socket) => {
       game.rotationCount -= game.pendingRotation;
     }
     
-    // Ici, vous pouvez mettre à jour le tableau cardDirections si nécessaire
     const baseDirections = ['N','E','S','W'];
-    // Recalcul de cardDirections à partir de rotationCount mod 4 pour le mapping des cartes
     const rotations = ((game.rotationCount % 4) + 4) % 4;
+    
     game.cardDirections = baseDirections.slice(rotations).concat(baseDirections.slice(0,rotations));
     
     game.pendingRotation = 0;
@@ -322,6 +414,163 @@ io.on('connection', (socket) => {
           entryTeleportData 
         });
       }
+    }
+  });
+
+  socket.on('diceRolling', (data) => {
+    const { gameId, diceValue } = data;
+    const game = games[gameId];
+    if (!game) return;
+    game.diceValue = diceValue;
+
+    io.to(gameId).emit('updateGameState', {
+      ...game,
+      wallsData,
+      rotateCompassData,
+      doubleRotateCompassData,
+      entryTeleportData
+    })
+  })
+  socket.on('closeDiceAndMove', (data) => {
+    const { gameId, diceValue } = data;
+    const game = games[gameId];
+    if (!game) return;
+    
+    const currentSocketId = game.playerOrder[game.playerTurn];
+    const player = game.players[currentSocketId];
+    
+    const exit = exits[diceValue];
+    if (exit) {
+      player.position = { row: exit.row, col: exit.col };
+    }
+    
+    game.showDice = false;
+
+    io.to(gameId).emit('updateGameState', { 
+      ...game, 
+      wallsData, 
+      rotateCompassData, 
+      doubleRotateCompassData, 
+      entryTeleportData 
+    });
+  });
+
+  socket.on('initiateSteal', (data) => {
+    const { gameId } = data;
+    const game = games[gameId];
+    if (!game) return;
+    game.showStealModal = true;
+    game.stealer = socket.id;
+    io.to(gameId).emit('updateGameState', { 
+      ...game, 
+      wallsData, 
+      rotateCompassData, 
+      doubleRotateCompassData, 
+      entryTeleportData 
+    });
+  });
+  
+  socket.on('confirmSteal', (data) => {
+    const { gameId, targetSocketId } = data;
+    const game = games[gameId];
+    if (!game || game.stealer !== socket.id) return;
+    
+    const targetPlayer = game.players[targetSocketId];
+    const stealerPlayer = game.players[game.stealer];
+    if (targetPlayer && targetPlayer.hand && targetPlayer.hand.length > 0) {
+      const stolenCard = targetPlayer.hand.splice(0, 1)[0];
+      stealerPlayer.hand.push(stolenCard);
+    }
+    game.showStealModal = false;
+    game.stealer = null;
+    
+    io.to(gameId).emit('updateGameState', { 
+      ...game, 
+      wallsData, 
+      rotateCompassData, 
+      doubleRotateCompassData, 
+      entryTeleportData 
+    });
+  });
+  
+  socket.on('cancelSteal', (data) => {
+    const { gameId } = data;
+    const game = games[gameId];
+    if (!game) return;
+    game.showStealModal = false;
+    game.stealer = null;
+    io.to(gameId).emit('updateGameState', { 
+      ...game, 
+      wallsData, 
+      rotateCompassData, 
+      doubleRotateCompassData, 
+      entryTeleportData 
+    });
+  });
+
+  socket.on('createRoom', (data) => {
+    const { expectedPlayers, organizerName, organizerColor } = data;
+    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    games[roomCode] = {
+      deck: shuffle([...initialDeck]),
+      discardPile: [],
+      players: {},
+      playerOrder: [],
+      playerTurn: 0,
+      winner: null,
+      playersPositions: [],
+      playersGoals: [],
+      cardDirections: ['N', 'E', 'S', 'W'],
+      expectedPlayers: expectedPlayers,
+      lockedWalls: [],
+      showDirection: false,
+      showDice: false,
+      pendingRotation: 0,
+      rotationCount: 0,
+      showStealModal: false,
+      stealer: null,
+      diceValue: 1
+    };
+  
+    const game = games[roomCode];
+    game.players[socket.id] = {
+      name: organizerName || "Organisateur",
+      color: organizerColor || "gray",
+      hand: [] 
+    };
+    game.playerOrder.push(socket.id);
+  
+    socket.join(roomCode);
+  
+    socket.emit('roomCreated', { roomCode });
+    io.to(roomCode).emit('updateGameState', game);
+  });
+
+  socket.on('joinRoom', (data) => {
+    const { roomCode, playerName, playerColor } = data;
+    const game = games[roomCode];
+    if (!game) {
+      socket.emit('errorMessage', { message: "Salle introuvable" });
+      return;
+    }
+    if (game.playerOrder.length >= game.expectedPlayers) {
+      socket.emit('errorMessage', { message: "Salle pleine" });
+      return;
+    }
+
+    game.players[socket.id] = {
+      name: playerName || `Joueur ${game.playerOrder.length + 1}`,
+      color: playerColor || "gray",
+      hand: [] 
+    };
+    game.playerOrder.push(socket.id);
+    socket.join(roomCode);
+    io.to(roomCode).emit('updateGameState', game);
+  
+    if (game.playerOrder.length === game.expectedPlayers) {
+      dealInitialCards(game);
+      io.to(roomCode).emit('startGame', game);
     }
   });
 });

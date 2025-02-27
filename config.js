@@ -67,8 +67,17 @@ export const doubleRotateCompassData = [
 ]
 
 export const entryTeleportData = [
-  { row : 5, col: 2 },
-  { row : 5, col: 17 },
+  { row : 19, col: 18 },
+  { row : 18, col: 19 },
   { row : 14, col: 2 },
   { row : 14, col: 17 },
 ];
+
+export const exits = {
+  1: { row: 5, col: 5 },
+  2: { row: 14, col: 5 },
+  3: { row: 5, col: 14 },
+  4: { row: 14, col: 14 },
+  5: { row: 18, col: 8 },
+  6: { row: 1, col: 11 }
+};
