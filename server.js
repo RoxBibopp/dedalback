@@ -522,6 +522,7 @@ io.on('connection', (socket) => {
     });
   
     const game = games[roomCode];
+    game.roomCode = roomCode;
 
     game.players[socket.id] = {
       name: organizerName || "Organisateur",
@@ -555,13 +556,36 @@ io.on('connection', (socket) => {
     };
     game.playerOrder.push(socket.id);
     socket.join(roomCode);
+
+    game.roomCode = roomCode;
     io.to(roomCode).emit('updateGameState', game);
   
     if (game.playerOrder.length === game.expectedPlayers) {
-      dealInitialCards(game);
-      io.to(roomCode).emit('startGame', game);
+      console.log("PLAYER ORDER : ", game.playerOrder);
     }
   });
+
+  socket.on('startGame', (data) => {
+    const { gameId } = data;
+    const game = games[gameId];
+    if (!game) return;
+    if (game.playerOrder[0] !== socket.id) {
+      socket.emit('errorMessage', { message: "Seul le créateur peut démarrer la partie" });
+      return;
+    }
+    dealInitialCards(game);
+    io.to(gameId).emit('startGame', game);
+  });
+
+  socket.on('getState', (data) => {
+    const { roomCode } = data;
+    const game = games[roomCode];
+    if (game) {
+      // Émet uniquement à ce socket (le client demandeur)
+      socket.emit('updateGameState', game);
+    }
+  });
+  
 });
 
 const PORT = process.env.PORT || 3000;
