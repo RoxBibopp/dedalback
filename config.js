@@ -16,10 +16,10 @@ export const wallsData = [
   { row: 7, col: 12 },
   { row: 8, col: 3 },{ row: 8, col: 7 }, { row: 8, col: 12 },
   { row: 8, col: 16 },
-  { row: 9, col: 1 },{ row: 9, col: 4 }, { row: 9, col: 15 },
-  { row: 9, col: 18 },
-  { row: 10, col: 1 },{ row: 10, col: 4 }, { row: 10, col: 15 },
-  { row: 10, col: 18 },
+  { row: 9, col: 1 },{ row: 9, col: 4 },{ row: 9, col: 9 },{ row: 9, col: 10 }, 
+  { row: 9, col: 15 },{ row: 9, col: 18 },
+  { row: 10, col: 1 },{ row: 10, col: 4 },{ row: 10, col: 9 },{ row: 10, col: 10 },
+  { row: 10, col: 15 }, { row: 10, col: 18 },
   { row: 11, col: 3 },{ row: 11, col: 7 }, { row: 11, col: 12 },
   { row: 11, col: 16 },
   { row: 12, col: 7 },{ row: 12, col: 8 }, { row: 12, col: 11 },
@@ -40,8 +40,6 @@ export const wallsData = [
 ];
 
 export const rotateCompassData = [
-  { row : 0, col: 1 },
-  { row : 1, col: 0 },
   { row : 2, col: 2 },
   { row : 2, col: 17 },
   { row : 3, col: 7 },
@@ -52,7 +50,8 @@ export const rotateCompassData = [
   { row : 11, col: 9 },
   { row : 11, col: 18 },
   { row : 14, col: 4 },
-  { row : 15, col: 10 },
+  { row : 16, col: 12 },
+  { row : 16, col: 7 },
   { row : 17, col: 2 },
   { row : 17, col: 15 },
 ];
@@ -62,15 +61,15 @@ export const doubleRotateCompassData = [
   { row : 4, col: 15 },
   { row : 8, col: 9 },
   { row : 12, col: 13 },
-  { row : 16, col: 5 },
+  { row : 16, col: 3 },
   { row : 17, col: 13 },
 ]
 
 export const entryTeleportData = [
-  { row : 19, col: 18 },
-  { row : 18, col: 19 },
-  { row : 14, col: 2 },
-  { row : 14, col: 17 },
+  { row : 6, col: 6 },
+  { row : 6, col: 13 },
+  { row : 13, col: 6 },
+  { row : 13, col: 13 },
 ];
 
 export const exits = {
@@ -78,6 +77,6 @@ export const exits = {
   2: { row: 14, col: 5 },
   3: { row: 5, col: 14 },
   4: { row: 14, col: 14 },
-  5: { row: 18, col: 8 },
-  6: { row: 1, col: 11 }
+  5: { row: 18, col: 12 },
+  6: { row: 1, col: 7 }
 };
