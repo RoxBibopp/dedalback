@@ -69,7 +69,7 @@ const initializeGameState = ({ playersCount, namesArr, colorsArr }) => {
     playersPositions: computePositions(playersCount),
     playersGoals: computeGoals(playersCount),
     cardDirections: ['N', 'E', 'S', 'W'],
-    expectedPlayersCount: playersCount,
+    expectedPlayers: playersCount,
     lockedWalls: [],
     showDirection: false,
     showDice: false,
@@ -318,7 +318,6 @@ const canMove = (gameState, player, playedCardType) => {
     return false;
   }
 
-  // Sinon, le déplacement est possible
   return true;
 }
 
@@ -328,6 +327,10 @@ io.on('connection', (socket) => {
   
   socket.on('joinGame', (data) => {
     const { gameId, playersCount, names, colors } = data;
+
+    const namesArr = typeof names === 'string' ? names.split(',') : names;
+    const colorsArr = typeof colors === 'string' ? colors.split(',') : colors;
+
     if (!games[gameId]) {
       games[gameId] = initializeGameState({ playersCount, namesArr: names, colorsArr: colors });
     }
@@ -335,8 +338,8 @@ io.on('connection', (socket) => {
     if (!game.players[socket.id]) {
       const index = game.playerOrder.length;
       game.players[socket.id] = { 
-        name: names[index] || `Joueur ${index+1}`, 
-        color: colors[index] || 'gray' 
+        name: namesArr[index] || `Joueur ${index+1}`, 
+        color: colorsArr[index] || 'gray' 
       };
       game.playerOrder.push(socket.id);
       socket.join(gameId);
@@ -512,28 +515,14 @@ io.on('connection', (socket) => {
     const { expectedPlayers, organizerName, organizerColor } = data;
     const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    games[roomCode] = {
-      deck: shuffle([...initialDeck]),
-      discardPile: [],
-      players: {},
-      playerOrder: [],
-      playerTurn: 0,
-      winner: null,
-      playersPositions: [],
-      playersGoals: [],
-      cardDirections: ['N', 'E', 'S', 'W'],
-      expectedPlayers: expectedPlayers,
-      lockedWalls: [],
-      showDirection: false,
-      showDice: false,
-      pendingRotation: 0,
-      rotationCount: 0,
-      showStealModal: false,
-      stealer: null,
-      diceValue: 1
-    };
+    games[roomCode] = initializeGameState({
+      playersCount: expectedPlayers,
+      namesArr: [organizerName],
+      colorsArr: [organizerColor]
+    });
   
     const game = games[roomCode];
+
     game.players[socket.id] = {
       name: organizerName || "Organisateur",
       color: organizerColor || "gray",
@@ -542,7 +531,7 @@ io.on('connection', (socket) => {
     game.playerOrder.push(socket.id);
   
     socket.join(roomCode);
-  
+    console.log("Création de la salle, roomCode =", roomCode);
     socket.emit('roomCreated', { roomCode });
     io.to(roomCode).emit('updateGameState', game);
   });
