@@ -8,7 +8,7 @@ import {
   entryTeleportData,
   exits
 } from './config.js';
-
+import { configureChat } from './chat.js';
 const app = express();
 const server = http.createServer(app);
 
@@ -324,7 +324,7 @@ const canMove = (gameState, player, playedCardType) => {
 
 io.on('connection', (socket) => {
   console.log(`Connexion : ${socket.id}`);
-  
+  configureChat(io, socket, games);
   socket.on('joinGame', (data) => {
     const { gameId, playersCount, names, colors } = data;
 
@@ -581,7 +581,6 @@ io.on('connection', (socket) => {
     const { roomCode } = data;
     const game = games[roomCode];
     if (game) {
-      // Émet uniquement à ce socket (le client demandeur)
       socket.emit('updateGameState', game);
     }
   });
