@@ -19,6 +19,10 @@ const io = new Server(server, {
   }
 });
 
+function generateUniqueId() {
+  return 'id-' + Math.random().toString(36).slice(2, 11) + '-' + Date.now();
+}
+
 const initialDeck = [
   { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' }, { type: 'N' },
   { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' }, { type: 'E' },
@@ -345,7 +349,7 @@ io.on('connection', (socket) => {
       socket.join(gameId);
       console.log(`${game.players[socket.id].name} (${socket.id}) a rejoint la partie ${gameId}`);
     }
-    if (game.playerOrder.length === game.expectedPlayersCount) {
+    if (game.playerOrder.length === game.expectedPlayers) {
       dealInitialCards(game);
     }
     io.to(gameId).emit('updateGameState', { 
@@ -401,21 +405,24 @@ io.on('connection', (socket) => {
   
   socket.on('disconnect', () => {
     console.log(`Déconnexion : ${socket.id}`);
-    for (const gameId in games) {
-      const game = games[gameId];
+    
+    // Pour chaque jeu, vérifier si le joueur était présent
+    for (const roomCode in games) {
+      const game = games[roomCode];
       if (game.players[socket.id]) {
-        delete game.players[socket.id];
-        game.playerOrder = game.playerOrder.filter(id => id !== socket.id);
-        if (game.playerTurn >= game.playerOrder.length) {
-          game.playerTurn = 0;
-        }
-        io.to(gameId).emit('updateGameState', { 
-          ...game, 
-          wallsData, 
-          rotateCompassData, 
-          doubleRotateCompassData, 
-          entryTeleportData 
-        });
+        // On marque le joueur comme déconnecté et on stocke l'heure de déconnexion
+        game.players[socket.id].disconnectedAt = Date.now();
+        
+        // Optionnel : planifier une suppression après un délai (ex. 30 secondes)
+        setTimeout(() => {
+          // Vérifier si le joueur est toujours déconnecté
+          if (game.players[socket.id] && game.players[socket.id].disconnectedAt) {
+            console.log(`Suppression du joueur ${socket.id} dans la salle ${roomCode}`);
+            delete game.players[socket.id];
+            game.playerOrder = game.playerOrder.filter(id => id !== socket.id);
+            io.to(roomCode).emit('updateGameState', game);
+          }
+        }, 300000); // 30 secondes
       }
     }
   });
@@ -512,7 +519,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('createRoom', (data) => {
-    const { expectedPlayers, organizerName, organizerColor } = data;
+    console.log('AAAAAAA', data)
+    const { expectedPlayers, organizerName, organizerColor, playerId } = data;
     const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
     games[roomCode] = initializeGameState({
@@ -524,7 +532,10 @@ io.on('connection', (socket) => {
     const game = games[roomCode];
     game.roomCode = roomCode;
 
+    const persistentId = (playerId !== undefined && playerId !== null) ? playerId : generateUniqueId();
+
     game.players[socket.id] = {
+      id: persistentId,
       name: organizerName || "Organisateur",
       color: organizerColor || "gray",
       hand: [] 
@@ -538,7 +549,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinRoom', (data) => {
-    const { roomCode, playerName, playerColor } = data;
+    const { roomCode, playerName, playerColor, playerId } = data;
     const game = games[roomCode];
     if (!game) {
       socket.emit('errorMessage', { message: "Salle introuvable" });
@@ -549,20 +560,38 @@ io.on('connection', (socket) => {
       return;
     }
 
-    game.players[socket.id] = {
-      name: playerName || `Joueur ${game.playerOrder.length + 1}`,
-      color: playerColor || "gray",
-      hand: [] 
-    };
-    game.playerOrder.push(socket.id);
-    socket.join(roomCode);
+    const persistentId = (playerId !== undefined && playerId !== null) ? playerId : generateUniqueId();
 
+    let existingSocketId = null;
+    for (const sid in game.players) {
+      if (game.players[sid].id === persistentId) {
+        existingSocketId = sid;
+        break;
+      }
+    }
+
+    if (existingSocketId) {
+      const playerData = game.players[existingSocketId];
+      delete game.players[existingSocketId];
+      game.players[socket.id] = { ...playerData, id: persistentId };
+      
+      const idx = game.playerOrder.indexOf(existingSocketId);
+      if (idx !== -1) {
+        game.playerOrder[idx] = socket.id;
+      }
+    } else {
+      game.players[socket.id] = {
+        id: persistentId,
+        name: playerName || `Joueur ${game.playerOrder.length + 1}`,
+        color: playerColor || "gray",
+        hand: []
+      };
+      game.playerOrder.push(socket.id);
+    }
+
+    socket.join(roomCode);
     game.roomCode = roomCode;
     io.to(roomCode).emit('updateGameState', game);
-  
-    if (game.playerOrder.length === game.expectedPlayers) {
-      console.log("PLAYER ORDER : ", game.playerOrder);
-    }
   });
 
   socket.on('startGame', (data) => {
